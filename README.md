@@ -87,38 +87,64 @@ CALL SWALKER_DB_DEV.DEMO_DEV.LOAD_COALESCE_NODES(
 
 Run these statements in order to configure the necessary components. Note that some steps require ACCOUNTADMIN privileges.
 
+### 1. Create the API Token Secret
+This secret will store your Coalesce API token securely in Snowflake:
+
 ```sql
--- 1. Create the API token secret
 CREATE SECRET your_secret_name
   TYPE = GENERIC_STRING
   SECRET_STRING = 'your-coalesce-api-token';
+```
 
--- 2. Create the network rule
+### 2. Create the Network Rule
+Define the allowed network endpoints for Coalesce API access:
+
+```sql
 CREATE OR REPLACE NETWORK RULE coalesce_api_rule
   ALLOWED_NETWORK_RULES = ('https://app.australia-southeast1.gcp.coalescesoftware.io')
   AS 'Coalesce API network rule';
+```
 
--- 3. Create the API integration
+### 3. Create the API Integration
+Set up the API integration for Coalesce access:
+
+```sql
 CREATE OR REPLACE API INTEGRATION coalesce_api_integration
   TYPE = API_INTEGRATION
   ENABLED = TRUE
   API_ALLOWED_PREFIXES = ('https://app.australia-southeast1.gcp.coalescesoftware.io');
+```
 
--- 4. Create the external access integration (requires ACCOUNTADMIN)
+### 4. Create the External Access Integration
+This global integration binds the network rules and secrets (requires ACCOUNTADMIN):
+
+```sql
 CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION coalesce_access_integration
   ALLOWED_NETWORK_RULES = (YOUR_DATABASE.YOUR_SCHEMA.coalesce_api_rule)
   ALLOWED_AUTHENTICATION_SECRETS = (YOUR_DATABASE.YOUR_SCHEMA.your_secret_name)
   ENABLED = TRUE;
+```
 
--- 5. Grant usage permissions
+### 5. Grant Usage Permissions
+Allow your role to use the integrations:
+
+```sql
 GRANT USAGE ON INTEGRATION coalesce_api_integration TO ROLE your_role;
 GRANT USAGE ON INTEGRATION coalesce_access_integration TO ROLE your_role;
+```
 
--- 6. Verify the setup
+### 6. Verify the Setup
+Confirm the integrations are properly configured:
+
+```sql
 SHOW API INTEGRATIONS;
 SHOW EXTERNAL ACCESS INTEGRATIONS;
+```
 
--- 7. Create the stored procedure
+### 7. Create the Stored Procedure
+Deploy the Python stored procedure that will fetch and load the Coalesce metadata:
+
+```sql
 CREATE OR REPLACE PROCEDURE LOAD_COALESCE_NODES(
     WORKSPACE_ID NUMBER,
     TARGET_DATABASE STRING,
@@ -139,7 +165,7 @@ import requests
 import json
 from datetime import datetime
 from snowflake.snowpark.types import StructType, StructField, StringType, VariantType, TimestampType
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 import _snowflake
 
 
@@ -158,13 +184,18 @@ class CoalesceNodeLoader:
             "accept": "application/json",
             "authorization": "Bearer " + token
         }
-        self.log = []
+        self.log_message = ""
 
     @property
     def full_table_name(self) -> str:
         return f"{self.database}.{self.schema}.{self.table}"
 
-    def validate_parameters(self) -> List[str]:
+    def append_log(self, message: str) -> None:
+        """Add a message to the log with a newline."""
+        self.log_message += f"{message}\n"
+
+    def validate_parameters(self) -> str:
+        """Validate all input parameters and return error message if any."""
         errors = []
         
         if not isinstance(self.workspace_id, (int, float)) or self.workspace_id <= 0:
@@ -184,7 +215,7 @@ class CoalesceNodeLoader:
         elif 'coalescesoftware' not in self.base_url.lower():
             errors.append(f"COALESCE_BASE_URL must contain 'coalescesoftware', got: {self.base_url}")
         
-        return errors
+        return "\n".join(errors) if errors else ""
 
     def ensure_table_exists(self) -> None:
         create_table_sql = f"""
@@ -197,7 +228,7 @@ class CoalesceNodeLoader:
         """
         self.session.sql(create_table_sql).collect()
 
-    def get_node_list(self) -> List[str]:
+    def get_node_list(self) -> list[str]:
         url = f"{self.base_url}/api/v1/workspaces/{self.workspace_id}/nodes"
         response = requests.request("GET", url, headers=self.headers, data={})
         
@@ -212,12 +243,12 @@ class CoalesceNodeLoader:
         response = requests.request("GET", url, headers=self.headers, data={})
         
         if response.status_code != 200:
-            self.log.append(f"Warning: Failed to fetch metadata for node {node_id}")
+            self.append_log(f"Warning: Failed to fetch metadata for node {node_id}")
             return None
             
         return json.loads(response.text)
 
-    def load_data_to_snowflake(self, nodes_data: List[Dict]) -> int:
+    def load_data_to_snowflake(self, nodes_data: list[Dict]) -> int:
         if not nodes_data:
             return 0
             
@@ -232,24 +263,29 @@ class CoalesceNodeLoader:
         df.write.mode("append").save_as_table(self.full_table_name)
         return len(nodes_data)
 
-    def execute(self) -> List[str]:
-        self.log = []
-        self.log.append(f"Starting procedure for workspace {self.workspace_id}...")
+    def execute(self) -> str:
+        """Execute the node metadata loading process and return log messages."""
+        self.log_message = ""  # Reset log
+        self.append_log(f"Starting procedure for workspace {self.workspace_id}...")
         
         try:
+            # Validate parameters
             validation_errors = self.validate_parameters()
             if validation_errors:
-                self.log.append("Parameter validation failed:")
-                self.log.extend(validation_errors)
-                return self.log
+                self.append_log("Parameter validation failed:")
+                self.append_log(validation_errors)
+                return self.log_message
 
-            self.log.append(f"Ensuring table {self.full_table_name} exists...")
+            # Create table if needed
+            self.append_log(f"Ensuring table {self.full_table_name} exists...")
             self.ensure_table_exists()
 
-            self.log.append("Fetching node list from Coalesce API...")
+            # Get node list
+            self.append_log("Fetching node list from Coalesce API...")
             node_ids = self.get_node_list()
-            self.log.append(f"Found {len(node_ids)} nodes to process")
+            self.append_log(f"Found {len(node_ids)} nodes to process")
 
+            # Process nodes
             current_time = datetime.now()
             nodes_data = []
             
@@ -262,21 +298,22 @@ class CoalesceNodeLoader:
                         'datetime_added': current_time,
                         'node_data': node_data
                     })
-                    self.log.append(f"Processed node {node_id}")
+                    self.append_log(f"Processed node {node_id}")
 
             if not nodes_data:
-                self.log.append("No valid node data to load")
-                return self.log
+                self.append_log("No valid node data to load")
+                return self.log_message
 
+            # Load data
             records_loaded = self.load_data_to_snowflake(nodes_data)
-            self.log.append(f"Successfully saved {records_loaded} records to {self.full_table_name}")
+            self.append_log(f"Successfully saved {records_loaded} records to {self.full_table_name}")
 
         except Exception as e:
-            self.log.append(f"Error: {str(e)}")
+            self.append_log(f"Error: {str(e)}")
             import traceback
-            self.log.append(f"Stack trace: {traceback.format_exc()}")
+            self.append_log(f"Stack trace: {traceback.format_exc()}")
             
-        return self.log
+        return self.log_message
 
 
 def run_load(snowpark_session, WORKSPACE_ID, TARGET_DATABASE, TARGET_SCHEMA, TARGET_TABLE, COALESCE_BASE_URL):
@@ -288,7 +325,7 @@ def run_load(snowpark_session, WORKSPACE_ID, TARGET_DATABASE, TARGET_SCHEMA, TAR
     return loader.execute()
 $$;
 
--- 8. Grant usage on the procedure and verify references
+-- 8. Grant usage and verify references
 -- Verify the stored procedure references the correct integrations and secret:
 CREATE OR REPLACE PROCEDURE LOAD_COALESCE_NODES(...)
   RETURNS STRING
@@ -339,6 +376,93 @@ SELECT
 FROM your_table
 WHERE node_data:node_type::STRING = 'YOUR_NODE_TYPE';
 ```
+
+## Using the Flattened Node View
+
+For easier querying of node metadata, a view called `FLATTENED_NODE_VIEW` is provided. This view flattens the JSON structure into columns for simpler querying and better performance.
+
+### Setting Up the View Context
+
+The view uses the same database and schema context as your node data:
+
+```sql
+-- Set the context to match your node data location
+USE DATABASE YOUR_DATABASE;
+USE SCHEMA YOUR_SCHEMA;
+
+-- Now you can query the view directly
+SELECT * FROM FLATTENED_NODE_VIEW;
+```
+
+### Available Columns
+
+The view provides these pre-flattened columns:
+
+#### Node Identification
+- `node_id`: Unique identifier for the node
+- `node_name`: Name of the node
+- `node_type`: Type of node (e.g., TABLE, VIEW)
+- `description`: Node description
+
+#### Location Information
+- `location_name`: Connection/location name
+- `database_name`: Database name
+- `schema_name`: Schema name
+- `table_name`: Table name
+
+#### Configuration
+- `materialization_type`: How the node is materialized
+- `is_multisource`: Whether node has multiple sources
+- `incremental_key`: Key used for incremental loading
+- `partition_by`: Partitioning columns
+- `cluster_by`: Clustering columns
+
+#### Join Information
+- `join_type`: Type of join (for join nodes)
+- `join_condition`: Join conditions
+
+#### SQL Information
+- `sql_query`: SQL query (for SQL nodes)
+- `dependencies`: Array of dependent node IDs
+
+#### Raw JSON Access
+- `config_json`: Complete configuration JSON
+- `metadata_json`: Complete metadata JSON
+- `node_data`: Complete node data JSON
+
+### Example Queries
+
+```sql
+-- Find all table nodes
+SELECT node_name, database_name, schema_name, table_name
+FROM FLATTENED_NODE_VIEW
+WHERE node_type = 'TABLE';
+
+-- Find nodes with specific materialization
+SELECT node_name, materialization_type
+FROM FLATTENED_NODE_VIEW
+WHERE materialization_type = 'VIEW';
+
+-- Analyze join conditions
+SELECT node_name, join_type, join_condition
+FROM FLATTENED_NODE_VIEW
+WHERE join_type IS NOT NULL;
+
+-- Find dependencies
+SELECT node_name, dependencies
+FROM FLATTENED_NODE_VIEW
+WHERE ARRAY_SIZE(dependencies) > 0;
+
+-- Complex filtering using JSON
+SELECT node_name, config_json
+FROM FLATTENED_NODE_VIEW
+WHERE config_json:someProperty::string = 'someValue';
+```
+
+### Notes
+- The view automatically excludes system and temporary nodes
+- NULL values are expected for fields that don't apply to certain node types
+- The original JSON is preserved in the `node_data` column for advanced querying
 
 ## Error Handling
 

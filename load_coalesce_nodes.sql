@@ -20,7 +20,7 @@ Table Schema:
     - node_data      VARIANT       : Complete node metadata as JSON
 
 Returns:
-    STRING array containing execution logs and error messages if any
+    STRING containing execution logs and error messages if any
 
 Prerequisites:
     1. A configured security integration in Snowflake for external API access
@@ -82,7 +82,7 @@ import requests
 import json
 from datetime import datetime
 from snowflake.snowpark.types import StructType, StructField, StringType, VariantType, TimestampType
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 import _snowflake
 
 
@@ -106,7 +106,7 @@ class CoalesceNodeLoader:
         table (str): Target Snowflake table name
         base_url (str): Coalesce API base URL
         headers (dict): API request headers including authentication
-        log (list): List of execution log messages
+        log_message (str): String to accumulate execution log messages
     """
     
     def __init__(self, snowpark_session, workspace_id: int, database: str, schema: str, 
@@ -135,7 +135,7 @@ class CoalesceNodeLoader:
             "accept": "application/json",
             "authorization": "Bearer " + token
         }
-        self.log = []
+        self.log_message = ""
 
     @property
     def full_table_name(self) -> str:
@@ -151,30 +151,17 @@ class CoalesceNodeLoader:
         """
         return f"{self.database}.{self.schema}.{self.table}"
 
-    def validate_parameters(self) -> List[str]:
-        """
-        Validate all input parameters for type and content requirements.
-        
-        Performs the following validations:
-        - workspace_id is a positive number
-        - database, schema, and table names are non-empty strings
-        - base_url is a valid URL starting with http(s) and contains 'coalescesoftware'
-        
-        Returns:
-            List[str]: List of error messages. Empty list if all validations pass.
-        
-        Example:
-            >>> errors = loader.validate_parameters()
-            >>> if errors:
-            ...     print("Validation failed:", errors)
-        """
+    def append_log(self, message: str) -> None:
+        """Add a message to the log with a newline."""
+        self.log_message += f"{message}\n"
+
+    def validate_parameters(self) -> str:
+        """Validate all input parameters and return error message if any."""
         errors = []
         
-        # Validate workspace_id
         if not isinstance(self.workspace_id, (int, float)) or self.workspace_id <= 0:
             errors.append(f"WORKSPACE_ID must be a positive number, got: {self.workspace_id}")
         
-        # Validate string parameters
         if not isinstance(self.database, str) or not self.database.strip():
             errors.append(f"TARGET_DATABASE must be a non-empty string, got: {self.database}")
         if not isinstance(self.schema, str) or not self.schema.strip():
@@ -182,7 +169,6 @@ class CoalesceNodeLoader:
         if not isinstance(self.table, str) or not self.table.strip():
             errors.append(f"TARGET_TABLE must be a non-empty string, got: {self.table}")
             
-        # Validate base URL
         if not isinstance(self.base_url, str) or not self.base_url.strip():
             errors.append(f"COALESCE_BASE_URL must be a non-empty string, got: {self.base_url}")
         elif not self.base_url.startswith(('http://', 'https://')):
@@ -190,7 +176,7 @@ class CoalesceNodeLoader:
         elif 'coalescesoftware' not in self.base_url.lower():
             errors.append(f"COALESCE_BASE_URL must contain 'coalescesoftware', got: {self.base_url}")
         
-        return errors
+        return "\n".join(errors) if errors else ""
 
     def ensure_table_exists(self) -> None:
         """
@@ -218,7 +204,7 @@ class CoalesceNodeLoader:
         """
         self.session.sql(create_table_sql).collect()
 
-    def get_node_list(self) -> List[str]:
+    def get_node_list(self) -> list[str]:
         """
         Fetch list of node IDs from Coalesce API.
         
@@ -226,7 +212,7 @@ class CoalesceNodeLoader:
         in the specified workspace.
         
         Returns:
-            List[str]: List of node IDs from the workspace
+            list[str]: List of node IDs from the workspace
         
         Raises:
             Exception: If API request fails or returns non-200 status code
@@ -266,12 +252,12 @@ class CoalesceNodeLoader:
         response = requests.request("GET", url, headers=self.headers, data={})
         
         if response.status_code != 200:
-            self.log.append(f"Warning: Failed to fetch metadata for node {node_id}")
+            self.append_log(f"Warning: Failed to fetch metadata for node {node_id}")
             return None
             
         return json.loads(response.text)
 
-    def load_data_to_snowflake(self, nodes_data: List[Dict]) -> int:
+    def load_data_to_snowflake(self, nodes_data: list[Dict]) -> int:
         """
         Load node metadata into Snowflake table.
         
@@ -279,7 +265,7 @@ class CoalesceNodeLoader:
         loads it into the target table using append mode.
         
         Args:
-            nodes_data (List[Dict]): List of node metadata dictionaries
+            nodes_data (list[Dict]): List of node metadata dictionaries
                 Each dict should contain:
                 - workspace_id: str
                 - node_id: str
@@ -308,45 +294,27 @@ class CoalesceNodeLoader:
         df.write.mode("append").save_as_table(self.full_table_name)
         return len(nodes_data)
 
-    def execute(self) -> List[str]:
-        """
-        Execute the complete ETL process.
-        
-        This is the main orchestration method that:
-        1. Validates all input parameters
-        2. Ensures target table exists
-        3. Fetches list of nodes
-        4. Retrieves metadata for each node
-        5. Loads data into Snowflake
-        6. Handles logging and error reporting
-        
-        Returns:
-            List[str]: Execution log messages including errors if any
-        
-        Example:
-            >>> log = loader.execute()
-            >>> for message in log:
-            ...     print(message)
-        """
-        self.log = []
-        self.log.append(f"Starting procedure for workspace {self.workspace_id}...")
+    def execute(self) -> str:
+        """Execute the node metadata loading process and return log messages."""
+        self.log_message = ""  # Reset log
+        self.append_log(f"Starting procedure for workspace {self.workspace_id}...")
         
         try:
             # Validate parameters
             validation_errors = self.validate_parameters()
             if validation_errors:
-                self.log.append("Parameter validation failed:")
-                self.log.extend(validation_errors)
-                return self.log
+                self.append_log("Parameter validation failed:")
+                self.append_log(validation_errors)
+                return self.log_message
 
             # Ensure table exists
-            self.log.append(f"Ensuring table {self.full_table_name} exists...")
+            self.append_log(f"Ensuring table {self.full_table_name} exists...")
             self.ensure_table_exists()
 
             # Get node list
-            self.log.append("Fetching node list from Coalesce API...")
+            self.append_log("Fetching node list from Coalesce API...")
             node_ids = self.get_node_list()
-            self.log.append(f"Found {len(node_ids)} nodes to process")
+            self.append_log(f"Found {len(node_ids)} nodes to process")
 
             # Process nodes
             current_time = datetime.now()
@@ -361,22 +329,22 @@ class CoalesceNodeLoader:
                         'datetime_added': current_time,
                         'node_data': node_data
                     })
-                    self.log.append(f"Processed node {node_id}")
+                    self.append_log(f"Processed node {node_id}")
 
             # Load to Snowflake
             if not nodes_data:
-                self.log.append("No valid node data to load")
-                return self.log
+                self.append_log("No valid node data to load")
+                return self.log_message
 
             records_loaded = self.load_data_to_snowflake(nodes_data)
-            self.log.append(f"Successfully saved {records_loaded} records to {self.full_table_name}")
+            self.append_log(f"Successfully saved {records_loaded} records to {self.full_table_name}")
 
         except Exception as e:
-            self.log.append(f"Error: {str(e)}")
+            self.append_log(f"Error: {str(e)}")
             import traceback
-            self.log.append(f"Stack trace: {traceback.format_exc()}")
+            self.append_log(f"Stack trace: {traceback.format_exc()}")
             
-        return self.log
+        return self.log_message
 
 
 def run_load(snowpark_session, WORKSPACE_ID, TARGET_DATABASE, TARGET_SCHEMA, TARGET_TABLE, COALESCE_BASE_URL):
@@ -424,11 +392,11 @@ Example Call:
 */
 
 CALL SWALKER_DB_DEV.DEMO_DEV.LOAD_COALESCE_NODES(
-    15,                                         -- WORKSPACE_ID: Your Coalesce workspace number
-    'SWALKER_DB_DEV',                          -- TARGET_DATABASE: Database to store the data
-    'DEMO_DEV',                                -- TARGET_SCHEMA: Schema to store the data
-    'NODES',                                   -- TARGET_TABLE: Will be created if doesn't exist
-    'https://app.australia-southeast1.gcp.coalescesoftware.io'          -- COALESCE_BASE_URL: Coalesce API endpoint
+    15,                                                           -- WORKSPACE_ID
+    'SWALKER_DB_DEV',                                           -- TARGET_DATABASE
+    'DEMO_DEV',                                                 -- TARGET_SCHEMA
+    'NODES',                                                    -- TARGET_TABLE
+    'https://app.coalescesoftware.io'  -- COALESCE_BASE_URL
 );
 
 /*
