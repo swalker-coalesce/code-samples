@@ -4,12 +4,19 @@ Description:
     It handles both the initial node list retrieval and detailed metadata for each node.
     The target table will be automatically created if it doesn't exist.
 
+IMPORTANT DEPLOYMENT NOTE:
+    When deploying this procedure, replace the following placeholders with your actual values:
+    - COALESCE_API_INTEGRATION: Your actual API integration name
+    - COALESCE_API_TOKEN: Your fully qualified secret name (e.g., DATABASE.SCHEMA.SECRET_NAME)
+    The angle brackets <> used in the examples below are for documentation only and should not be 
+    used in the actual deployment.
+
 Parameters:
     WORKSPACE_ID      - NUMBER   : The Coalesce workspace ID to fetch nodes from
     TARGET_DATABASE   - STRING   : Target Snowflake database for data loading
     TARGET_SCHEMA     - STRING   : Target schema within the database
-    TARGET_TABLE      - STRING   : Target table name for the node metadata
-    COALESCE_BASE_URL - STRING   : Base URL for the Coalesce API (e.g., 'https://app.australia-southeast1.gcp.coalescesoftware.io')
+    TARGET_TABLE      - STRING   : Target table name for the node metadata (defaults to COALESCE_NODE_METADATA)
+    COALESCE_BASE_URL - STRING   : Base URL for the Coalesce API (e.g., 'https://app.coalescesoftware.io')
     SECURITY_INTEGRATION - STRING: Name of the Snowflake security integration for external access
 
 Table Schema:
@@ -30,23 +37,24 @@ Prerequisites:
 Usage Examples:
 
     1. Basic usage with default security integration:
-    CALL SWALKER_DB_DEV.DEMO_DEV.LOAD_COALESCE_NODES(
-        15,                                         -- WORKSPACE_ID
-        'SWALKER_DB_DEV',                          -- TARGET_DATABASE
-        'DEMO_DEV',                                -- TARGET_SCHEMA
-        'NODES',                                   -- TARGET_TABLE
-        'https://app.australia-southeast1.gcp.coalescesoftware.io',         -- COALESCE_BASE_URL
-        'SSW_AM_API_INTEGRATION'                   -- SECURITY_INTEGRATION
+    CALL <YOUR_DATABASE>.<YOUR_SCHEMA>.LOAD_COALESCE_NODES(
+        15,                                  -- WORKSPACE_ID
+        '<YOUR_DATABASE>',                   -- TARGET_DATABASE
+        '<YOUR_SCHEMA>',                     -- TARGET_SCHEMA
+        'COALESCE_NODE_METADATA',           -- TARGET_TABLE
+        'https://app.coalescesoftware.io'   -- COALESCE_BASE_URL
     );
 
-    2. Using a different security integration:
-    CALL SWALKER_DB_DEV.DEMO_DEV.LOAD_COALESCE_NODES(
-        15, 
-        'SWALKER_DB_DEV', 
-        'DEMO_DEV', 
-        'NODES', 
-        'https://app.australia-southeast1.gcp.coalescesoftware.io',
-        'YOUR_CUSTOM_API_INTEGRATION'
+    2. Using current context:
+    USE DATABASE <YOUR_DATABASE>;
+    USE SCHEMA <YOUR_SCHEMA>;
+    
+    CALL LOAD_COALESCE_NODES(
+        15,                                  -- WORKSPACE_ID
+        CURRENT_DATABASE(),                  -- TARGET_DATABASE
+        CURRENT_SCHEMA(),                    -- TARGET_SCHEMA
+        'COALESCE_NODE_METADATA',           -- TARGET_TABLE
+        'https://app.coalescesoftware.io'   -- COALESCE_BASE_URL
     );
 
 Error Handling:
@@ -62,7 +70,7 @@ Notes:
     - The security integration must have appropriate network rules for Coalesce API access
 */
 
-CREATE OR REPLACE PROCEDURE SWALKER_DB_DEV.DEMO_DEV.LOAD_COALESCE_NODES(
+CREATE OR REPLACE PROCEDURE LOAD_COALESCE_NODES(
     WORKSPACE_ID NUMBER,
     TARGET_DATABASE STRING,
     TARGET_SCHEMA STRING,
@@ -75,7 +83,7 @@ RUNTIME_VERSION = '3.12'
 external_access_integrations=(COALESCE_API_INTEGRATION_SSW)
 PACKAGES = ('requests', 'snowflake-snowpark-python')
 HANDLER = 'run_load'
-SECRETS = ('token' = SWALKER_DB_DEV.DEMO_DEV.COALESCE_API_TOKEN_SSW_US)
+SECRETS = ('token' = SWALKER_DB_DEV.DEMO_DEV.COALESCE_API_TOKEN_SSW_US)  -- Note: Use actual fully qualified secret name when deploying
 AS
 $$
 import requests
@@ -355,59 +363,3 @@ def run_load(snowpark_session, WORKSPACE_ID, TARGET_DATABASE, TARGET_SCHEMA, TAR
     )
     return loader.execute()
 $$;
-
--- Example usage:
-
-/*
-Quick Start Guide for LOAD_COALESCE_NODES Stored Procedure
-
-Purpose:
-    Loads Coalesce node metadata into a Snowflake table. The procedure will:
-    - Create the target table if it doesn't exist
-    - Fetch all nodes from the specified Coalesce workspace
-    - Store both raw JSON and parsed metadata
-    - Preserve existing data (append-only)
-
-Required Parameters:
-    1. WORKSPACE_ID: Your Coalesce workspace number (found in Coalesce URL)
-    2. TARGET_DATABASE: Where to store the data
-    3. TARGET_SCHEMA: Schema within the database
-    4. TARGET_TABLE: Name for the table (will be created if doesn't exist)
-    5. COALESCE_BASE_URL: Usually 'https://app.australia-southeast1.gcp.coalescesoftware.io'
-    6. SECURITY_INTEGRATION: Snowflake security integration name for API access
-
-The created table will have this structure:
-    - workspace_id: STRING        (Coalesce workspace ID)
-    - node_id: STRING            (Individual node identifier)
-    - datetime_added: TIMESTAMP  (When the record was loaded)
-    - node_data: VARIANT        (Complete node metadata as JSON)
-
-Common Issues:
-    - Invalid API token → Check your Coalesce API token
-    - Security integration error → Verify the integration name and permissions
-    - Permission denied → Ensure you have CREATE TABLE rights if table doesn't exist
-    - Network error → Verify security integration allows access to Coalesce API
-
-Example Call:
-*/
-
-CALL SWALKER_DB_DEV.DEMO_DEV.LOAD_COALESCE_NODES(
-    15,                                                           -- WORKSPACE_ID
-    'SWALKER_DB_DEV',                                           -- TARGET_DATABASE
-    'DEMO_DEV',                                                 -- TARGET_SCHEMA
-    'NODES',                                                    -- TARGET_TABLE
-    'https://app.coalescesoftware.io'  -- COALESCE_BASE_URL
-);
-
-/*
-After successful execution:
-    - Check the returned messages for execution status
-    - Query the table to verify data: SELECT * FROM <TARGET_DATABASE>.<TARGET_SCHEMA>.<TARGET_TABLE>
-    - View node metadata: SELECT node_data:nodeType, node_data:name FROM <TARGET_TABLE>
-
-Need help?
-    - Check the full procedure documentation above
-    - Verify all parameters are correct
-    - Ensure you have appropriate permissions
-    - Contact your Snowflake admin for security integration issues
-*/

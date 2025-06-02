@@ -6,8 +6,8 @@ Description:
 
 Usage:
     -- First set the context:
-    USE DATABASE <TARGET_DATABASE>;  -- e.g., SWALKER_DB_DEV
-    USE SCHEMA <TARGET_SCHEMA>;      -- e.g., DEMO_DEV
+    USE DATABASE <YOUR_DATABASE>;
+    USE SCHEMA <YOUR_SCHEMA>;
     
     -- Then query the view:
     SELECT * FROM FLATTENED_NODE_VIEW WHERE node_type = 'TABLE';
@@ -16,7 +16,7 @@ Usage:
 Note: 
     - Some fields might be NULL depending on the node type
     - The original node_data is preserved in the view for custom JSON path queries
-    - This view reads from the same table that LOAD_COALESCE_NODES procedure writes to
+    - This view reads from the COALESCE_NODE_METADATA table that LOAD_COALESCE_NODES procedure writes to
 */
 
 CREATE OR REPLACE VIEW FLATTENED_NODE_VIEW AS
@@ -52,7 +52,7 @@ SELECT
     node_data:"config"                            AS config_json,
     node_data:"metadata"                          AS metadata_json,
     node_data                                     AS node_data
-FROM NODES  -- Uses current database and schema context
+FROM COALESCE_NODE_METADATA  -- Uses current database and schema context
 
 -- Optional: Add some common filters to exclude system tables
 WHERE node_data:"nodeType"::STRING NOT IN ('SYSTEM', 'TEMPORARY');
