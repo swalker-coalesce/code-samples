@@ -90,19 +90,21 @@ Review and deploy `load_node_metadata_sp.sql`. This file contains:
 - Comprehensive inline documentation
 - Parameter validation and error handling
 
-### 8. Create the Flattened View
+### 8. Run the Stored Procedure
+Use `load_node_metadata_example.sql` which provides:
+- Step-by-step usage guide
+- Example procedure calls
+- Common troubleshooting tips
+- Verification queries
+
+### 9. Create the Flattened View
 Deploy `view_node_data.sql` to create a view that:
 - Flattens the JSON metadata into columns
 - Provides easier access to common node properties
 - Enables simpler querying without JSON path syntax
 - Excludes system and temporary nodes
 
-### 9. Test the Implementation
-Use `load_node_metadata_example.sql` which provides:
-- Step-by-step usage guide
-- Example procedure calls
-- Common troubleshooting tips
-- Verification queries
+
 
 ## Querying the Data
 
