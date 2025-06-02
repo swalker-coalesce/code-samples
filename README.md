@@ -29,6 +29,21 @@ Before using the stored procedure, ensure you have:
 
 Run these statements in order to configure the necessary components. Note that some steps require ACCOUNTADMIN privileges.
 
+### 0. Set Context and Variables
+First, set your working context and store common variables:
+
+```sql
+-- Set your working context
+USE ROLE ACCOUNTADMIN;
+USE DATABASE <YOUR_DATABASE>;
+USE SCHEMA <YOUR_SCHEMA>;
+
+-- Store common variables
+SET COALESCE_URL = 'https://app.coalescesoftware.io';
+SET CURRENT_DB = CURRENT_DATABASE();
+SET CURRENT_SCHEMA = CURRENT_SCHEMA();
+```
+
 ### 1. Create the API Token Secret
 This secret will store your Coalesce API token securely in Snowflake:
 
@@ -43,7 +58,7 @@ Define the allowed network endpoints for Coalesce API access:
 
 ```sql
 CREATE OR REPLACE NETWORK RULE coalesce_api_rule
-  ALLOWED_NETWORK_RULES = ('https://app.coalescesoftware.io')
+  ALLOWED_NETWORK_RULES = ($COALESCE_URL)
   AS 'Coalesce API network rule';
 ```
 
@@ -54,7 +69,7 @@ Set up the API integration for Coalesce access:
 CREATE OR REPLACE API INTEGRATION coalesce_api_integration
   TYPE = API_INTEGRATION
   ENABLED = TRUE
-  API_ALLOWED_PREFIXES = ('https://app.coalescesoftware.io');
+  API_ALLOWED_PREFIXES = ($COALESCE_URL);
 ```
 
 ### 4. Create the External Access Integration
@@ -62,8 +77,8 @@ This global integration binds the network rules and secrets (requires ACCOUNTADM
 
 ```sql
 CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION coalesce_access_integration
-  ALLOWED_NETWORK_RULES = (YOUR_DATABASE.YOUR_SCHEMA.coalesce_api_rule)
-  ALLOWED_AUTHENTICATION_SECRETS = (YOUR_DATABASE.YOUR_SCHEMA.your_secret_name)
+  ALLOWED_NETWORK_RULES = (coalesce_api_rule)
+  ALLOWED_AUTHENTICATION_SECRETS = (your_secret_name)
   ENABLED = TRUE;
 ```
 
