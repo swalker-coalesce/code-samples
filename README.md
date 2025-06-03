@@ -39,7 +39,7 @@ USE DATABASE <YOUR_DATABASE>;
 USE SCHEMA <YOUR_SCHEMA>;
 
 -- Store common variables
-SET COALESCE_URL = 'https://app.coalescesoftware.io';
+SET COALESCE_URL = 'https://app.australia-southeast1.gcp.coalescesoftware.io';
 SET CURRENT_DB = CURRENT_DATABASE();
 SET CURRENT_SCHEMA = CURRENT_SCHEMA();
 ```
