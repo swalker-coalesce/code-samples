@@ -67,7 +67,7 @@ The function expects query tags in the following JSON format:
 
 ### Workspace Configuration
 
-![Workspace Parameters](./image-node.png)
+![Workspace Parameters](./image-parameters.png)
 
 The workspace parameters should be configured with:
 ```json
