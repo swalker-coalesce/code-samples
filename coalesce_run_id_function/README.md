@@ -67,7 +67,7 @@ The function expects query tags in the following JSON format:
 
 ### Workspace Configuration
 
-![Workspace Parameters](Screenshot%202025-06-05%20at%203.11.24%20PM.png)
+![Workspace Parameters](./images/workspace_parameters.png)
 
 The workspace parameters should be configured with:
 ```json
@@ -79,7 +79,7 @@ The workspace parameters should be configured with:
 
 ### Node Implementation
 
-![Node Mapping](Screenshot%202025-06-05%20at%203.09.52%20PM.png)
+![Node Mapping](./images/node_mapping.png)
 
 In your node mappings, configure the RUN_ID field using:
 ```sql
@@ -87,4 +87,14 @@ In your node mappings, configure the RUN_ID field using:
 ```
 
 This will automatically pull the run ID from the current Coalesce execution context. The RUN_ID field is typically configured as an INT data type and can be used to track the execution across different nodes and operations.
+
+## Directory Structure
+
+```
+coalesce_run_id_function/
+├── README.md
+├── images/
+│   ├── workspace_parameters.png
+│   └── node_mapping.png
+```
 
