@@ -112,14 +112,58 @@ Use `load_node_metadata_example.sql` which provides:
 - Common troubleshooting tips
 - Verification queries
 
+Since you've already set your context in step 0, you can run the procedure using:
+
+```sql
+-- Simple execution using current context
+CALL LOAD_COALESCE_NODES(
+    15,                     -- WORKSPACE_ID
+    $CURRENT_DB,           -- TARGET_DATABASE
+    $CURRENT_SCHEMA,       -- TARGET_SCHEMA
+    'COALESCE_NODE_METADATA',           -- TARGET_TABLE
+    $COALESCE_URL         -- COALESCE_BASE_URL
+);
+
+-- Verify the data was loaded
+SELECT COUNT(*) FROM COALESCE_NODE_METADATA;
+
+-- View some sample data
+SELECT 
+    node_data:name::STRING as node_name,
+    node_data:nodeType::STRING as node_type,
+    node_data:database::STRING as database_name,
+    node_data:schema::STRING as schema_name
+FROM COALESCE_NODE_METADATA
+LIMIT 5;
+
+-- Check the most recent load
+SELECT 
+    COUNT(*) as node_count,
+    MAX(datetime_added) as last_loaded,
+    workspace_id
+FROM COALESCE_NODE_METADATA
+GROUP BY workspace_id
+ORDER BY last_loaded DESC;
+```
+
+For automated jobs or different contexts, you can also use the fully qualified version:
+
+```sql
+CALL $CURRENT_DB.$CURRENT_SCHEMA.LOAD_COALESCE_NODES(
+    15,                     -- WORKSPACE_ID
+    $CURRENT_DB,           -- TARGET_DATABASE
+    $CURRENT_SCHEMA,       -- TARGET_SCHEMA
+    'COALESCE_NODE_METADATA',           -- TARGET_TABLE
+    $COALESCE_URL         -- COALESCE_BASE_URL
+);
+```
+
 ### 9. Create the Flattened View
 Deploy `view_node_data.sql` to create a view that:
 - Flattens the JSON metadata into columns
 - Provides easier access to common node properties
 - Enables simpler querying without JSON path syntax
 - Excludes system and temporary nodes
-
-
 
 ## Querying the Data
 
@@ -172,6 +216,3 @@ All errors are logged and returned in the procedure output.
 
 Feel free to submit issues and enhancement requests!
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.

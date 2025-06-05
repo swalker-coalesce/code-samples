@@ -80,10 +80,10 @@ CREATE OR REPLACE PROCEDURE LOAD_COALESCE_NODES(
 RETURNS STRING
 LANGUAGE PYTHON
 RUNTIME_VERSION = '3.12'
-external_access_integrations=(COALESCE_API_INTEGRATION_SSW)
+external_access_integrations=(coalesce_api_integration)
 PACKAGES = ('requests', 'snowflake-snowpark-python')
 HANDLER = 'run_load'
-SECRETS = ('token' = SWALKER_DB_DEV.DEMO_DEV.COALESCE_API_TOKEN_SSW_US)  -- Note: Use actual fully qualified secret name when deploying
+SECRETS = ('token' = your_secret_name)  -- Note: Use actual fully qualified secret name when deploying
 AS
 $$
 import requests
