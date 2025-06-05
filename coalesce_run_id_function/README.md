@@ -67,7 +67,7 @@ The function expects query tags in the following JSON format:
 
 ### Workspace Configuration
 
-![Workspace Parameters](./images/workspace_parameters.png)
+![Workspace Parameters](./coalesce_run_id_function/image-node.png)
 
 The workspace parameters should be configured with:
 ```json
@@ -79,7 +79,7 @@ The workspace parameters should be configured with:
 
 ### Node Implementation
 
-![Node Mapping](./images/node_mapping.png)
+![Node Mapping](./coalesce_run_id_function/image-node.png)
 
 In your node mappings, configure the RUN_ID field using:
 ```sql
