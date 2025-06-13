@@ -57,9 +57,10 @@ CREATE SECRET your_secret_name
 Define the allowed network endpoints for Coalesce API access:
 
 ```sql
-CREATE OR REPLACE NETWORK RULE coalesce_api_rule
-  ALLOWED_NETWORK_RULES = ($COALESCE_URL)
-  AS 'Coalesce API network rule';
+CREATE OR REPLACE  NETWORK RULE coalesce_api_rule
+MODE = EGRESS
+TYPE = HOST_PORT
+VALUE_LIST = ($COALESCE_URL);
 ```
 
 ### 3. Create the API Integration
