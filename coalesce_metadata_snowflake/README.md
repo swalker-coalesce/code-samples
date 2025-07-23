@@ -63,17 +63,8 @@ TYPE = HOST_PORT
 VALUE_LIST = ($COALESCE_URL);
 ```
 
-### 3. Create the API Integration
-Set up the API integration for Coalesce access:
 
-```sql
-CREATE OR REPLACE API INTEGRATION coalesce_api_integration
-  TYPE = API_INTEGRATION
-  ENABLED = TRUE
-  API_ALLOWED_PREFIXES = ($COALESCE_URL);
-```
-
-### 4. Create the External Access Integration
+### 3. Create the External Access Integration
 This global integration binds the network rules and secrets (requires ACCOUNTADMIN):
 
 ```sql
@@ -83,30 +74,28 @@ CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION coalesce_access_integration
   ENABLED = TRUE;
 ```
 
-### 5. Grant Usage Permissions
+### 4. Grant Usage Permissions
 Allow your role to use the integrations:
 
 ```sql
-GRANT USAGE ON INTEGRATION coalesce_api_integration TO ROLE your_role;
 GRANT USAGE ON INTEGRATION coalesce_access_integration TO ROLE your_role;
 ```
 
-### 6. Verify the Setup
+### 5. Verify the Setup
 Confirm the integrations are properly configured:
 
 ```sql
-SHOW API INTEGRATIONS;
 SHOW EXTERNAL ACCESS INTEGRATIONS;
 ```
 
-### 7. Deploy the Stored Procedure
+### 6. Deploy the Stored Procedure
 Review and deploy `load_node_metadata_sp.sql`. This file contains:
 - Complete stored procedure implementation
 - Python code for API interaction and data loading
 - Comprehensive inline documentation
 - Parameter validation and error handling
 
-### 8. Run the Stored Procedure
+### 7. Run the Stored Procedure
 Use `load_node_metadata_example.sql` which provides:
 - Step-by-step usage guide
 - Example procedure calls
