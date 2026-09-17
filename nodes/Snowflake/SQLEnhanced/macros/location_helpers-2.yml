@@ -1,0 +1,26 @@
+fileVersion: 1
+id: "2"
+macroString: |-
+  {#-- Get the database name for a storage location --#}
+  {%- macro loc_db(location_name) -%}
+      {{ (storageLocations | selectattr('name', 'equalto', location_name) | first).database }}
+  {%- endmacro -%}
+
+  {#-- Get the schema name for a storage location --#}
+  {%- macro loc_schema(location_name) -%}
+      {{ (storageLocations | selectattr('name', 'equalto', location_name) | first).schema }}
+  {%- endmacro -%}
+
+  {#-- Get DB.SCHEMA path for a storage location --#}
+  {%- macro loc_path(location_name) -%}
+      {{ loc_db(location_name) }}.{{ loc_schema(location_name) }}
+  {%- endmacro -%}
+
+  {#-- Fully qualify a function call with DB.SCHEMA for a given location.
+       Usage in a CTE: {{ loc_fn("SILVER", "TRIM_CLEAN(TRADE_ID)") }}
+       Resolves to:    MY_DATABASE.SILVER.TRIM_CLEAN(TRADE_ID)         --#}
+  {%- macro loc_fn(location_name, fn_call) -%}
+      {{ loc_path(location_name) }}.{{ fn_call }}
+  {%- endmacro -%}
+name: location_helpers
+type: Macro

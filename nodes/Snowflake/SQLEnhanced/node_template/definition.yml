@@ -1,0 +1,79 @@
+fileVersion: 2
+id: "12"
+isDisabled: false
+metadata:
+  defaultStorageLocation: null
+  error: null
+  nodeMetadataSpec: |
+    capitalized: DDL Utility
+    short: DDL
+    plural: DDLUtilities
+    tagColor: '#8B5CF6'
+
+    config:
+    - groupName: Options
+      items:
+      - type: materializationSelector
+        default: table
+        options:
+        - table
+        isRequired: true
+
+      - type: overrideSQLToggle
+        enableIf: "true"
+
+      - displayName: Pre-SQL
+        attributeName: preSQL
+        type: textBox
+        syntax: sql
+        isRequired: false
+
+      - displayName: Post-SQL
+        attributeName: postSQL
+        type: textBox
+        syntax: sql
+        isRequired: false
+
+    - groupName: Examples
+      items:
+      - displayName: DDL Examples (copy into Override SQL above)
+        attributeName: ddlExamples
+        type: textBox
+        syntax: sql
+        isRequired: false
+        default: |
+          -- DDL Utility Node
+          -- Place a dummy SELECT at the top (required for parser), then your DDL below the @@DDL@@ marker.
+          -- Separate multiple statements with -- @@STATEMENT@@
+          -- Use ref_no_link to qualify object names for environment promotion.
+          --
+          -- Example: Two UDFs
+          --
+          SELECT 1 AS DDL_PLACEHOLDER
+          -- @@DDL@@
+          CREATE OR REPLACE FUNCTION {{ ref_no_link('SILVER', 'MY_UDF_NAME') }}(input_val STRING)
+          RETURNS STRING
+          LANGUAGE SQL
+          AS 'TRIM(input_val)';
+          -- @@STATEMENT@@
+          CREATE OR REPLACE FUNCTION {{ ref_no_link('SILVER', 'MY_OTHER_UDF') }}(input_val STRING)
+          RETURNS STRING
+          LANGUAGE SQL
+          AS 'UPPER(input_val)';
+          --
+          -- To CALL these UDFs from a V2 SQL node, use the CTE + loc_fn macro pattern:
+          --
+          --   WITH prepared AS (
+          --       SELECT
+          --           {{ loc_fn("SILVER", "MY_UDF_NAME(COL_NAME)") }} AS COL_NAME
+          --       FROM {{ ref('LOCATION', 'SOURCE_NODE') }}
+          --   )
+          --   SELECT COL_NAME FROM prepared
+          --
+          -- Available macros (from macros/location_helpers-2.yml):
+          --   {{ loc_db("SILVER") }}                           -> MY_DATABASE
+          --   {{ loc_schema("SILVER") }}                       -> SILVER
+          --   {{ loc_path("SILVER") }}                         -> MY_DATABASE.SILVER
+          --   {{ loc_fn("SILVER", "FN_NAME(col)") }}           -> MY_DATABASE.SILVER.FN_NAME(col)
+name: DDL Utility
+type: NodeType

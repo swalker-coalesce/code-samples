@@ -1,0 +1,26 @@
+{# == Node Type: DDL Utility == #}
+{# == Executes raw DDL statements (UDFs, masking rules, etc.) as-is == #}
+{# == File format: dummy SELECT on top (for parser), DDL below -- @@DDL@@ marker == #}
+{# == Multiple statements separated by -- @@STATEMENT@@ == #}
+
+{%- set rawSQL = sources[0].customSQL | default('') -%}
+{%- set marker = '-- @@DDL@@' -%}
+
+{%- if marker in rawSQL -%}
+    {%- set ddlBlock = rawSQL.split(marker)[1] | trim -%}
+    {%- set statements = ddlBlock.split('-- @@STATEMENT@@') -%}
+    {%- for stmt in statements -%}
+        {%- set trimmed = stmt | trim -%}
+        {%- if trimmed | length > 0 -%}
+
+{{ stage('DDL Statement ' ~ loop.index) }}
+{{ trimmed }}
+
+        {%- endif -%}
+    {%- endfor -%}
+{%- else -%}
+
+{{ stage('No DDL') }}
+SELECT 1 = 0
+
+{%- endif -%}
