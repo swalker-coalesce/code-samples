@@ -558,7 +558,55 @@ does not permit copying or modification for any other purpose.
                 )
             {% endif %}
             {% if config.deleteStrategy == "SOFT DELETE" and node.isMultisource == false %}
-            /* Reactivate soft-deleted rows that reappear in source */
+            /* Expire the latest soft-deleted row so it becomes part of SCD2 history (flag 0 -> N) */
+            UNION ALL
+                (
+                    SELECT
+                    {% if config.selectDistinct %}
+                        DISTINCT
+                    {% endif %}
+                    {%- for col in source.columns if not col.isSurrogateKey %}
+                        {% if col.isSystemCurrentFlag %}
+                            'N'
+                        {% elif col.isSystemEndDate %}
+                            DATEADD(MILLISECONDS, -1, CAST(CURRENT_TIMESTAMP AS TIMESTAMP))
+                        {% elif col.isSystemUpdateDate %}
+                            CAST(CURRENT_TIMESTAMP AS TIMESTAMP)
+                        {% else %}
+                            "DIM"."{{ col.name }}"
+                        {% endif %}
+                        AS "{{ col.name }}",
+                    {% endfor -%}
+                        'REACTIVATE_EXPIRE_OLD' AS "DML_OPERATION"
+
+                    {{  get_clause(joinclause,'from')  }}
+
+                    INNER JOIN {{ ref_no_link(node.location.name, node.name) }} "DIM" ON
+                    {% for col in source.columns if col.isBusinessKey -%}
+                        {% if not loop.first %}
+                            AND
+                        {% endif %}
+                            {{ get_source_transform(col) }} = "DIM"."{{ col.name }}"
+                    {% endfor %}
+
+                    WHERE "DIM"."{{ get_value_by_column_attribute("isSystemCurrentFlag") }}" = '0'
+
+                    QUALIFY ROW_NUMBER() OVER (
+                        PARTITION BY {% for col in source.columns if col.isBusinessKey %}
+                            {{ get_source_transform(col) }}{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                        ORDER BY "DIM"."{{ get_value_by_column_attribute("isSystemUpdateDate") }}" DESC
+                    ) = 1
+
+                    {{ get_clause(joinclause) }}
+
+                    {% if config.groupByAll %}
+                        GROUP BY ALL
+                    {% endif %}
+
+                    {{ sortorder_by_colv() }}
+                )
+            /* Insert the new current version for the reactivated record */
             UNION ALL
                 (
                     SELECT
@@ -567,13 +615,15 @@ does not permit copying or modification for any other purpose.
                     {% endif %}
                     {%- for col in source.columns if not col.isSurrogateKey %}
                         {% if col.isSystemVersion %}
-                            "DIM"."{{ col.name }}"
+                            "DIM"."{{ col.name }}" + 1
                         {% elif col.isSystemCurrentFlag %}
                             'Y'
                         {% elif col.isSystemStartDate %}
                             CAST(CURRENT_TIMESTAMP AS TIMESTAMP)
                         {% elif col.isSystemEndDate %}
                             CAST('2999-12-31 00:00:00' AS TIMESTAMP)
+                        {% elif col.isSystemCreateDate %}
+                            CAST(CURRENT_TIMESTAMP AS TIMESTAMP)
                         {% elif col.isSystemUpdateDate %}
                             CAST(CURRENT_TIMESTAMP AS TIMESTAMP)
                         {% else %}
@@ -581,7 +631,7 @@ does not permit copying or modification for any other purpose.
                         {% endif %}
                         AS "{{ col.name }}",
                     {% endfor -%}
-                        'REACTIVATE_SOFT_DELETED_ROWS' AS "DML_OPERATION"
+                        'REACTIVATE_INSERT_NEW' AS "DML_OPERATION"
 
                     {{  get_clause(joinclause,'from')  }}
 
@@ -771,27 +821,15 @@ does not permit copying or modification for any other purpose.
             THEN DELETE
 		{% endif %}
         {% if config.deleteStrategy == "SOFT DELETE" %}
-        /* Reactivate soft-deleted record that reappeared in source */
+        /* Expire the soft-deleted row as part of SCD2 reactivation (0 -> N, close end date) */
         WHEN MATCHED
-        AND "SRC"."DML_OPERATION" = 'REACTIVATE_SOFT_DELETED_ROWS'
+        AND "SRC"."DML_OPERATION" = 'REACTIVATE_EXPIRE_OLD'
         AND "TGT"."{{ get_value_by_column_attribute("isSystemCurrentFlag") }}" = '0'
         THEN UPDATE SET
-        {%- for col in columns if not (col.isBusinessKey or col.isSurrogateKey or col.isSystemCreateDate) %}
-            {% if not loop.first %},{% endif %}
-            {% if col.isSystemVersion %}
-                "TGT"."{{ col.name }}" = "TGT"."{{ col.name }}" + 1
-            {% elif col.isSystemCurrentFlag %}
-                "TGT"."{{ col.name }}" = 'Y'
-            {% elif col.isSystemStartDate %}
-                "TGT"."{{ col.name }}" = CAST(CURRENT_TIMESTAMP AS TIMESTAMP)
-            {% elif col.isSystemEndDate %}
-                "TGT"."{{ col.name }}" = CAST('2999-12-31 00:00:00' AS TIMESTAMP)
-            {% elif col.isSystemUpdateDate %}
-                "TGT"."{{ col.name }}" = CAST(CURRENT_TIMESTAMP AS TIMESTAMP)
-            {% else %}
+        {% for col in columns if (col.isSystemCurrentFlag or col.isSystemEndDate or col.isSystemUpdateDate) %}
+                    {% if not loop.first %} , {% endif %}
                 "TGT"."{{ col.name }}" = "SRC"."{{ col.name }}"
-            {% endif %}
-        {%- endfor %}
+        {% endfor %}
         {% endif %}
         {%if config.deleteStrategy == "SOFT DELETE" and config.lastModifiedComparison %}
             WHEN MATCHED AND (SRC.DML_OPERATION = 'SOFT_DELETE_ROWS' OR SRC.DML_OPERATION = 'update_expired_version_rows' ) 
@@ -1366,17 +1404,7 @@ END
                 {% endif %}
             {% endif %}
 
-            {% if config.deleteStrategy == "SOFT DELETE" and node.isMultisource == false %}
-            /* Reactivate soft-deleted record that reappeared in source (Type 1) */
-            WHEN MATCHED
-            AND "TGT"."{{ get_value_by_column_attribute("isSystemCurrentFlag") }}" = '0'
-            AND "SRC"."{{ get_value_by_column_attribute("isSystemCurrentFlag") }}" != '0'
-            THEN UPDATE SET
-            {%- for col in columns if not (col.isBusinessKey or col.isSurrogateKey or col.isSystemCreateDate) %}
-                    "TGT"."{{ col.name }}" = "SRC"."{{ col.name }}"
-                {% if not loop.last %}, {% endif %}
-            {% endfor -%}
-            {% endif %}
+
 
             WHEN MATCHED
              {%if not config.lastModifiedComparison%}
