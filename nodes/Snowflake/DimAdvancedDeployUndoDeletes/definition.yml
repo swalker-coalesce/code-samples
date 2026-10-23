@@ -135,6 +135,12 @@ metadata:
         - "HARD DELETE"
         isRequired: false
         enableIf: "{% if node.materializationType != 'view' and config.updateStrategy == 'MERGE' and node.isMultisource == false %} true {% else %} false {% endif %}"
+
+      - displayName: Skip Deletes When Source Is Empty
+        attributeName: skipDeleteOnEmptySource
+        type: toggleButton
+        default: true
+        enableIf: "{% if node.materializationType != 'view' and config.updateStrategy == 'MERGE' and node.isMultisource == false and config.deleteStrategy != 'NO DELETE' %} true {% else %} false {% endif %}"
       
       - type: businessKeyColumns
         isRequired: true

@@ -275,14 +275,14 @@ does not permit copying or modification for any other purpose.
 
            {% set joinclause = source.join %}
            
-            /* New Rows That Don't Exist */
+            /* New Rows That Don't Exist (or re-inserted after a hard delete: continue the version sequence so history is never matched) */
             (SELECT
             {% if config.selectDistinct %}
             DISTINCT
             {% endif %}
             {% for col in source.columns if not col.isSurrogateKey %}
                 {% if col.isSystemVersion %}
-                    1
+                    COALESCE("HIST"."MAX_VERSION", 0) + 1
                 {% elif col.isSystemCurrentFlag %}
                     'Y'
                 {% else %}
@@ -292,12 +292,29 @@ does not permit copying or modification for any other purpose.
             {% endfor %}
                 'INSERT_INITAL_VERSION_ROWS' AS "DML_OPERATION"
             {{  get_clause(joinclause,'from')  }}
+            /* Soft-deleted keys ('0') are reactivated below, so they are not new rows */
             LEFT JOIN {{ ref_no_link(node.location.name, node.name) }} "DIM" ON
             {% for col in source.columns if col.isBusinessKey -%}
                 {% if not loop.first %}
                     AND
                 {% endif %}
                     {{ get_source_transform(col) }} = "DIM"."{{ col.name }}"
+            {% endfor %}
+            AND "DIM"."{{ get_value_by_column_attribute("isSystemCurrentFlag") }}" IN ('Y', '0')
+            LEFT JOIN (
+                SELECT
+                {% for col in columns if col.isBusinessKey -%}
+                    "{{ col.name }}",
+                {% endfor %}
+                    MAX("{{ get_value_by_column_attribute("isSystemVersion") }}") AS "MAX_VERSION"
+                FROM {{ ref_no_link(node.location.name, node.name) }}
+                GROUP BY ALL
+            ) "HIST" ON
+            {% for col in source.columns if col.isBusinessKey -%}
+                {% if not loop.first %}
+                    AND
+                {% endif %}
+                    {{ get_source_transform(col) }} = "HIST"."{{ col.name }}"
             {% endfor %}
             WHERE
             {% for col in source.columns if col.isBusinessKey -%}
@@ -544,8 +561,12 @@ does not permit copying or modification for any other purpose.
                         AND "DIM"."{{ get_value_by_column_attribute("isSurrogateKey") }}" <> {{config.insertZeroKeySurrogateKey}}							 
                         {% endif %}
 
-                        {% if config.deleteStrategy == "SOFT DELETE" %}
-                            AND "DIM"."{{ get_value_by_column_attribute("isSystemCurrentFlag") }}" != '0'
+                        /* Current version only - history is never touched by a delete */
+                        AND "DIM"."{{ get_value_by_column_attribute("isSystemCurrentFlag") }}" = 'Y'
+
+                        {% if config.skipDeleteOnEmptySource | default(true) %}
+                        /* Empty-batch guard: never delete everything because a load returned no rows */
+                        AND EXISTS (SELECT 1 {{ get_clause(joinclause,'from') }} WHERE 1 = 1 {{ get_clause(joinclause) }})
                         {% endif %}
                 
                     {{ get_clause(joinclause) }}
@@ -1363,7 +1384,11 @@ END
                             {% endif %}
                             {% if config.deleteStrategy == "SOFT DELETE" %}
                                     AND "DIM"."{{ get_value_by_column_attribute("isSystemCurrentFlag") }}" != '0'
-                            {% endif %}     
+                            {% endif %}
+                            {% if config.skipDeleteOnEmptySource | default(true) %}
+                              /* Empty-batch guard: never delete everything because a load returned no rows */
+                              AND EXISTS (SELECT 1 {{ get_clause(joinclause,'from') }} WHERE 1 = 1 {{ get_clause(joinclause) }})
+                            {% endif %}
                              {{ get_clause(joinclause) }}   
                  {% if config.groupByAll or config.lastModifiedComparison %}
                      GROUP BY ALL
